@@ -1,0 +1,147 @@
+/* ---------------------------------------------------------------------------
+ * Beautiful UI — token + motion layer
+ *
+ * The Sidebar family speaks a short, neutral vocabulary (ink, surface, field,
+ * line) instead of the repo's long semantic names. Those names are aliases and
+ * nothing more: every one of them points at a token that already carries light
+ * and dark values, so the rail flips with the rest of the app and no parallel
+ * palette is introduced here.
+ *
+ * `inline` makes each utility read its variable at use time instead of
+ * freezing the value at build time — that is what keeps the light ↔ dark flip
+ * working without a rebuild.
+ * --------------------------------------------------------------------------- */
+
+@theme inline {
+  /* Text */
+  --color-ink:   var(--color-text-primary);
+  --color-ink-2: var(--color-text-secondary);
+  --color-ink-3: var(--color-text-tertiary);
+
+  /* Surfaces */
+  --color-surface: var(--color-background-primary-default);
+  --color-field:   var(--color-background-secondary-default);
+  --color-hover-2: var(--color-background-primary-hover);
+
+  /* Lines */
+  --color-line:        var(--color-separator-border);
+  --color-line-strong: var(--color-background-primary-active);
+
+  /* Elevation. The fallbacks repeat the recipes already in
+   * boardui/styles/theme.css: those variables only reach :root when some
+   * `shadow-*` utility consumes them, so an elevation nothing else uses would
+   * otherwise resolve to nothing. Dark mode always finds the live tokens. */
+  --shadow-overlay: var(
+    --shadow-xl,
+    0 10px 10px -5px rgb(0 0 0 / 0.04), 0 20px 25px -5px rgb(0 0 0 / 0.1)
+  );
+  --shadow-hairline: var(--shadow-2xs, 0 1px rgb(0 0 0 / 0.05));
+}
+
+/* ---------------------------------------------------------------------------
+ * Floating surfaces
+ * --------------------------------------------------------------------------- */
+
+/* Pop-in for portaled panels: 180ms of scale + fade from the top-left corner,
+ * which is the corner they open out of. Duration, easing and origin are set by
+ * the call site. */
+@keyframes beautiful-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Scope marker for a Beautiful UI surface that renders outside the component
+ * tree it was written for — the workspace menu is portaled to <body>. It opens
+ * a stacking context so the panel always paints above the shell, and re-anchors
+ * copy to the ink ramp so a host that sets its own `color` cannot bleed in. */
+.beautiful-ui-scope {
+  isolation: isolate;
+  color: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------------------
+ * Sidebar collapse
+ *
+ * The <aside> carries `data-sidebar-collapsed` and the three custom properties
+ * below (also written inline by the component, which wins). The rail animates
+ * its own width on the long clock while the copy inside runs a shorter one, so
+ * the text is gone before the rail stops moving.
+ *
+ * `visibility` rides along on every fade: it interpolates as a discrete step
+ * that holds the visible value for the whole duration, which is what removes
+ * hidden copy from the a11y tree and the tab order only once it is invisible.
+ * Reduced motion is already handled globally in styles/agents.css.
+ * --------------------------------------------------------------------------- */
+
+[data-sidebar-collapsed] {
+  --sidebar-copy-duration: 180ms;
+  --sidebar-copy-offset: 8px;
+  --sidebar-easing: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-copy {
+  transition:
+    opacity var(--sidebar-copy-duration) var(--sidebar-easing),
+    transform var(--sidebar-copy-duration) var(--sidebar-easing),
+    visibility var(--sidebar-copy-duration) var(--sidebar-easing);
+}
+
+[data-sidebar-collapsed="true"] .sidebar-copy {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(calc(-1 * var(--sidebar-copy-offset)));
+}
+
+/* The workspace trigger steps out with the rest of the copy. The collapse and
+ * expand controls swap places; each keeps the reference's own timing and only
+ * gains `visibility`, so neither one blinks during the swap. */
+.sidebar-workspace-control {
+  transition:
+    opacity var(--sidebar-copy-duration) var(--sidebar-easing),
+    visibility var(--sidebar-copy-duration) var(--sidebar-easing),
+    background-color 100ms ease,
+    transform 100ms ease;
+}
+
+.sidebar-collapse-control,
+.sidebar-expand-control {
+  transition:
+    opacity 150ms ease,
+    visibility 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+[data-sidebar-collapsed="true"] .sidebar-workspace-control,
+[data-sidebar-collapsed="true"] .sidebar-collapse-control,
+[data-sidebar-collapsed="false"] .sidebar-expand-control {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* In the 52px rail the history has no icon column of its own — those rows are
+ * label-only — so the whole region steps out with the copy rather than leaving
+ * empty pills behind. The rows that do survive are already centred in 52px,
+ * because their icons sit in a fixed 20px box at the same 8px inset. */
+.sidebar-history,
+.sidebar-footer {
+  transition:
+    opacity var(--sidebar-copy-duration) var(--sidebar-easing),
+    visibility var(--sidebar-copy-duration) var(--sidebar-easing);
+}
+
+[data-sidebar-collapsed="true"] .sidebar-history,
+[data-sidebar-collapsed="true"] .sidebar-footer {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}

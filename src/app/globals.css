@@ -1,0 +1,155 @@
+@import "../components/boardui/styles/globals.css";
+@import "../../styles/agents.css";
+@import "../components/prompt-kit/styles.css";
+@import "../components/beautiful-ui/theme.css";
+@import "../../styles/markdown.css";
+
+/* shadcn preset: keyframes and data-state custom variants */
+@import "shadcn/tailwind.css";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ---------------------------------------------------------------- black ---
+ * The Vercel canvas, and the reason this block exists.
+ *
+ * `styles/agents.css` defines the palette once — five colours under
+ * `--color-*` names — and then builds every other surface token on top of
+ * them as `var()` references: `--background` is
+ * `var(--color-background-full)`, `--card` is
+ * `var(--color-background-primary-default)`, and so on through muted, border,
+ * input and the sidebar group. That indirection is what makes a black canvas
+ * affordable: redefining those five values restyles the app chrome *and* every
+ * installed vendor component at the same time, because all of them read the
+ * same references. Overriding the derived tokens instead would have left ~550
+ * third-party cards on the old slate while the frame around them turned black.
+ *
+ * Source order does the work. `styles/agents.css` is imported above, this
+ * block comes after, both selectors are `html.dark` at equal specificity, so
+ * these values win — and because the derived tokens are references rather than
+ * copies, they follow without being restated here.
+ *
+ * The ramp is Vercel's: a true `#000` canvas, a raised surface one step off it,
+ * hairlines at roughly 9% white, and a near-white ink scale. The gaps between
+ * the surfaces are small on purpose — separation is carried by borders, not by
+ * lightness, which is why the shadows in the shell were dropped rather than
+ * re-tuned. Contrast against the canvas stays well clear of AA at every step:
+ * #ededed is ~17:1, #a1a1a1 ~8:1, #7d7d7d ~4.7:1.
+ */
+html.dark {
+  --color-background-full: #000000;
+  --color-background-primary-default: #0a0a0a;
+  --color-background-secondary-default: #171717;
+  --color-background-primary-hover: #1f1f1f;
+  --color-text-primary: #ededed;
+  --color-text-secondary: #a1a1a1;
+  --color-text-tertiary: #7d7d7d;
+  --color-border-button-default: #333333;
+  --color-separator-border: #262626;
+}
+
+/* Vercel's blue, kept for the one place colour carries meaning rather than
+ * structure. Declared under the same namespace the vendor components read, so
+ * a class like `bg-accent-600` resolves instead of silently rendering nothing. */
+html:root,
+html.dark {
+  --color-accent-600: #0070f3;
+}
+
+/* Vercel's radii are small and consistent: 6px at the base, so the derived
+ * scale lands on 4/5/6/8/10px rather than the 6/8/10/14px the vendor default
+ * produces. Tightening it here rather than per component is what keeps a card
+ * at the edge of a view and a control inside it on the same scale. */
+html:root,
+html.dark {
+  --radius: 6px;
+}
+
+/* Vocab tokens styles/agents.css does not override. Light and dark fall backs
+ * keep the shadcn surface tokens (ring, destructive, charts, sidebar) usable. */
+:root {
+  --destructive: oklch(0.577 0.245 27.325);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --destructive: oklch(0.704 0.191 22.216);
+  /* A 56%-grey focus ring disappears against a #000 canvas. Vercel keys focus
+   * to the near-white ink instead, which also means the ring reads as part of
+   * the text it belongs to rather than as a coloured halo. */
+  --ring: oklch(0.88 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.88 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

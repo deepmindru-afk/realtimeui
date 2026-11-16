@@ -1,0 +1,4 @@
+# Local/dev install for the agent worker. The runtime image (Dockerfile) only
+# installs requirements.txt.
+-r requirements.txt
+pytest

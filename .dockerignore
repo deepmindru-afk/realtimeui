@@ -1,0 +1,17 @@
+# dependencies
+node_modules
+
+# next.js build output
+.next
+out
+
+# git
+.git
+
+# env files
+.env*
+
+# misc
+*.md
+Dockerfile
+.dockerignore

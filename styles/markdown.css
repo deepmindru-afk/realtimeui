@@ -1,0 +1,876 @@
+/* ---------------------------------------------------------------------------
+ * Markdown typography — the reading layer for the transcript
+ *
+ * Everything a turn says lands here: paragraphs, the occasional heading, a
+ * checklist, a table of findings, a fenced snippet. Both roles render through
+ * it — the agent is the one producing structure, but an operator pastes a table
+ * and a snippet too. What separates them is density, not markup: everything
+ * below is the assistant's setting, and the `markdown-bubble` section at the
+ * foot of the file re-states the same tokens for the user chip.
+ *
+ * Without this file the markup renders as unstyled HTML soup, because
+ * `@tailwindcss/typography` is deliberately not a dependency — that plugin
+ * ships one fixed gray ramp and a `prose-invert` companion, neither of which can
+ * follow the shadcn token bridge this app already has, and a chat is not a docs
+ * page anyway. So the scale is authored here, against the same semantic tokens
+ * the rest of the product uses.
+ *
+ * Three rules shape everything below.
+ *
+ * 1. No `dark:` variants. Light and dark come from the tokens flipping, so a
+ *    rule states an intent ("this line is secondary ink") and stays correct
+ *    when the theme changes. The single exception is the shiki token bridge
+ *    further down, which is commented at the point it is needed.
+ *
+ * 2. Colors are mixed, never hardcoded. `color-mix` against `--muted-
+ *    foreground` produces hairlines, zebra rows and inline-code chips that
+ *    land correctly on the plain assistant background and on the `bg-secondary`
+ *    user bubble without a second set of values per surface.
+ *
+ * 3. Rhythm comes from the flow tokens, not from per-element guesses. Agent
+ *    output is read in long scrolling columns, so the gaps are generous and
+ *    even; the only asymmetry is deliberate, headings open more space above
+ *    than they leave below, so the eye finds the start of a section.
+ *
+ * The block model matters for the selectors. `Markdown` lexes the source with
+ * marked and renders one ReactMarkdown per top-level token, so a message is a
+ * flat list of block roots (a `p`, a `ul`, a `table`, a heading) with no
+ * wrapper per block. Flow is therefore expressed on direct children, and
+ * anything that has to distinguish "same block" from "next block" is scoped to
+ * a container (`li`, `blockquote`, `td`) rather than to sibling order.
+ *
+ * Type scale, sized for a 14px chat column rather than a docs page, and for an
+ * assistant turn specifically. Agent output is mostly h2/h3, so the middle of
+ * the scale gets the attention; the user bubble compresses it again, at the
+ * foot of this file:
+ *
+ *   h1  21px / 600 / -0.02em   a real title, once per answer
+ *   h2  18px / 600 / -0.015em  the workhorse heading, with a hairline above
+ *   h3  16px / 600 / -0.01em   the sub-section
+ *   h4  13px / 600 / +0.06em   an eyebrow: uppercase, muted, tracked out
+ *
+ * h2 carries a section rule. Long answers with mixed prose and tables are hard
+ * to scan without one, and the rule is the same hairline the app uses for
+ * every other separator, so it reads as part of the product rather than a
+ * markdown convention. A leading h2 drops it — a rule above the first thing in
+ * a message is decoration with nothing to divide.
+ *
+ * Inline sizes (code, kbd, sup/sub) are `em` so they fit whatever text they
+ * land in; block sizes are `rem` so a caller's `text-sm` on the bubble cannot
+ * drag the heading hierarchy around with it. The user bubble overrides those
+ * block sizes on purpose, and does it from the token values rather than by
+ * standing up a second scale next to this one.
+ * --------------------------------------------------------------------------- */
+
+.markdown-body {
+  /* Vertical rhythm */
+  --md-flow: 0.875rem;
+  --md-flow-block: 1.125rem;
+  --md-flow-tight: 0.3125rem;
+  --md-section: 1.5rem;
+  --md-heading-gap: 0.5rem;
+  --md-indent: 1.25rem;
+
+  /* Derived surfaces. Every one is a mix of an existing token with
+   * transparency, so each has a light and a dark reading for free. */
+  --md-rule: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
+  --md-rule-strong: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
+  --md-quote-rule: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+  --md-zebra: color-mix(in oklab, var(--muted-foreground) 4%, transparent);
+  --md-zebra-hover: color-mix(in oklab, var(--muted-foreground) 8%, transparent);
+  --md-code-bg: color-mix(in oklab, var(--muted-foreground) 11%, transparent);
+  --md-code-border: color-mix(in oklab, var(--muted-foreground) 24%, transparent);
+
+  color: var(--foreground);
+  line-height: 1.7;
+  /* A long URL, a file path or a bare identifier must never widen the bubble. */
+  overflow-wrap: break-word;
+}
+
+/* --- Block rhythm -------------------------------------------------------- */
+
+/* UA margins are removed first so every gap below is ours. A `p` inside a list
+ * item, a quote or a cell inherits from its container, not from the root.
+ *
+ * `:where()` keeps this at the specificity of the class alone, so the flow rule
+ * underneath — which is one notch weaker than a `.markdown-body :is(...)` — can
+ * still win on source order. Without it this reset would outrank the rhythm and
+ * every paragraph would come out flush. */
+.markdown-body :where(
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  ul,
+  ol,
+  li,
+  dl,
+  dd,
+  blockquote,
+  pre,
+  table,
+  figure,
+  hr
+) {
+  margin: 0;
+}
+
+.markdown-body > * {
+  margin-block: var(--md-flow);
+}
+
+.markdown-body > :first-child {
+  margin-block-start: 0;
+}
+
+.markdown-body > :last-child {
+  margin-block-end: 0;
+}
+
+/* Blocks that carry their own edge — a quote, a table, a code card — get extra
+ * air so the rule or the border reads as a boundary rather than a seam. */
+.markdown-body > blockquote,
+.markdown-body > .markdown-table-scroll,
+.markdown-body > .markdown-code {
+  margin-block: var(--md-flow-block);
+}
+
+/* A block that renders to nothing (marked emits a `space` token for blank
+ * lines) must not leave a hole in the flow. */
+.markdown-body p:empty {
+  display: none;
+}
+
+/* A blank line inside a list or a quote makes `marked` hand over two sibling
+ * roots where the author wrote one, with nothing left in the DOM to say they
+ * belong together. It happens for an ordered list that runs straight into a
+ * bullet one, and for a quote that a blank line cut in half. Closing the gap
+ * for those pairs is the only adjacency rule in the file, and it is safe by
+ * construction: it fires only when the two really are consecutive, so a list
+ * that is meant to stand apart always has a paragraph between it and the next.
+ * A quote keeps its left rule in one unbroken run, which is the whole point of
+ * a quote's left rule. */
+.markdown-body > :is(ul, ol, blockquote) + :is(ul, ol, blockquote) {
+  margin-block-start: 0;
+}
+
+/* --- Headings ------------------------------------------------------------ */
+
+.markdown-body :is(h1, h2, h3, h4) {
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-block: var(--md-section) var(--md-heading-gap);
+  text-wrap: balance;
+}
+
+.markdown-body :is(h1, h2, h3, h4):first-child {
+  margin-block-start: 0;
+}
+
+.markdown-body :is(h1, h2, h3, h4):last-child {
+  margin-block-end: 0;
+}
+
+.markdown-body h1 {
+  font-size: 1.3125rem;
+  letter-spacing: -0.02em;
+}
+
+.markdown-body h2 {
+  font-size: 1.125rem;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+/* Section rule. Scoped to a block root so a heading inside a quote or a list
+ * item stays compact. */
+.markdown-body > h2 {
+  border-top: 1px solid var(--md-rule);
+  margin-block-start: 2rem;
+  padding-block-start: 1.375rem;
+}
+
+.markdown-body > h2:first-child {
+  border-top: 0;
+  margin-block-start: 0;
+  padding-block-start: 0;
+}
+
+.markdown-body h3 {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin-block: 1.125rem var(--md-heading-gap);
+}
+
+.markdown-body h4 {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  margin-block: 1rem 0.25rem;
+  text-transform: uppercase;
+}
+
+/* A heading is often a label for code right below it, and a 16px chip with
+ * chips around it at body size reads as a mistake. */
+.markdown-body :is(h1, h2, h3, h4) code {
+  font-size: 0.9em;
+  padding-block: 0.05em;
+}
+
+/* --- Body ---------------------------------------------------------------- */
+
+.markdown-body p {
+  /* Keeps a lone last word from hanging on its own line at the end of a
+   * paragraph. */
+  text-wrap: pretty;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body del {
+  color: var(--muted-foreground);
+}
+
+/* Links read as links by their rule, not by a second hue — the palette is
+ * achromatic on purpose, so a tinted link would be the only colored thing in
+ * the bubble. */
+.markdown-body a {
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--md-rule-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  transition: text-decoration-color 120ms ease;
+}
+
+.markdown-body a:hover {
+  text-decoration-color: currentColor;
+}
+
+.markdown-body a:focus-visible {
+  outline: 2px solid var(--color-border-focus-ring);
+  outline-offset: 2px;
+  border-radius: calc(var(--radius-sm) * 0.5);
+}
+
+/* Inline code. The chip is a mix of secondary ink rather than a fixed gray, so
+ * it stays visible on the assistant background and on the `bg-secondary` user
+ * bubble, and inverts with the theme. */
+.markdown-body :not(pre) > code {
+  background-color: var(--md-code-bg);
+  border: 1px solid var(--md-code-border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  /* The app sets a -0.01em tracking for Inter; mono wants its own metrics or
+   * the caret stops lining up. */
+  font-feature-settings: normal;
+  letter-spacing: 0;
+  padding: 0.1em 0.35em;
+  font-size: 0.875em;
+  font-weight: 450;
+  /* Chip padding has to stay under the body line box or every line carrying
+   * code grows. 0.1em on a 12.25px chip is ~2.5px, well inside 1.7 line-height
+   * at 14px. */
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.markdown-body kbd {
+  background-color: var(--md-code-bg);
+  border: 1px solid var(--md-code-border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  line-height: 1.2;
+  padding: 0.15em 0.4em;
+}
+
+.markdown-body sup,
+.markdown-body sub {
+  font-size: 0.72em;
+  /* `line-height: 0` keeps a footnote marker from opening up the line it sits
+   * in. */
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+.markdown-body sup {
+  top: -0.5em;
+}
+
+.markdown-body sub {
+  bottom: -0.25em;
+}
+
+.markdown-body img {
+  border: 1px solid var(--md-rule);
+  border-radius: var(--radius-lg);
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+.markdown-body hr {
+  border: 0;
+  border-top: 1px solid var(--md-rule);
+  margin-block: 1.75rem;
+}
+
+.markdown-body hr:first-child {
+  margin-block-start: 0;
+}
+
+/* --- Lists --------------------------------------------------------------- */
+
+/* A 5px dot marker, not the platform bullet: the UA disc is optically large
+ * and sits too far from the text at this measure. */
+.markdown-body :is(ul, ol) {
+  padding-inline-start: var(--md-indent);
+}
+
+.markdown-body li {
+  padding-inline-start: 0.25rem;
+  position: relative;
+}
+
+.markdown-body li + li {
+  margin-block-start: var(--md-flow-tight);
+}
+
+.markdown-body ul > li::before {
+  background-color: var(--md-rule-strong);
+  border-radius: 999px;
+  content: "";
+  height: 0.3125rem;
+  inset-inline-start: 0;
+  position: absolute;
+  top: 0.72em;
+  width: 0.3125rem;
+}
+
+.markdown-body ol {
+  /* The counter carries meaning, so it keeps the native decimal marker — only
+   * restyled. */
+  list-style: decimal;
+}
+
+.markdown-body ol > li::marker {
+  color: var(--muted-foreground);
+  font-size: 0.9375em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* Nested lists indent off their parent item's content edge, and the gap
+ * between an item and the list under it is small — they are one thought. */
+.markdown-body li :is(ul, ol) {
+  margin-block: var(--md-flow-tight);
+  padding-inline-start: 0.875rem;
+}
+
+.markdown-body li :is(ul, ol) > li + li {
+  margin-block-start: 0.125rem;
+}
+
+/* A paragraph inside an item is either the whole item or the first line of it;
+ * either way it must not carry block rhythm of its own. */
+.markdown-body li > p {
+  margin-block: 0;
+}
+
+.markdown-body li > * + * {
+  margin-block-start: var(--md-flow-tight);
+}
+
+.markdown-body li > p + p {
+  margin-block-start: var(--md-flow-tight);
+}
+
+/* Task lists (GFM). remark-gfm renders a real disabled checkbox as the first
+ * child of the item, so the item's own text starts at its padding edge and the
+ * box is hung into that gutter — which keeps nested lists inside a task item
+ * aligning with the task's text rather than with its box. */
+.markdown-body li:has(> input[type="checkbox"]) {
+  list-style: none;
+  padding-inline-start: 1.375rem;
+}
+
+.markdown-body li:has(> input[type="checkbox"])::before {
+  content: none;
+}
+
+.markdown-body li > input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: transparent;
+  border: 1.5px solid var(--md-rule-strong);
+  border-radius: calc(var(--radius-sm) * 0.66);
+  cursor: default;
+  height: 1rem;
+  inset-block-start: 0.3em;
+  inset-inline-start: 0;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  width: 1rem;
+}
+
+.markdown-body li > input[type="checkbox"]:checked {
+  background-color: var(--foreground);
+  border-color: var(--foreground);
+}
+
+/* The tick is a pseudo on the *item*, not on the input: an input is a replaced
+ * element and will not render one. Its color is the page surface, which is the
+ * exact inverse of the filled box, so it reads in both themes without a second
+ * hardcoded value. */
+.markdown-body li:has(> input[type="checkbox"]:checked)::after {
+  border-bottom: 2px solid var(--background);
+  border-right: 2px solid var(--background);
+  content: "";
+  height: 0.5rem;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.4375rem;
+  position: absolute;
+  transform: rotate(45deg);
+  width: 0.25rem;
+  z-index: 1;
+}
+
+/* --- Blockquote ---------------------------------------------------------- */
+
+/* A rule and quieter ink. A filled box would put a second surface inside a
+ * bubble that is already a surface, and the point of a quote is the margin. */
+.markdown-body blockquote {
+  border-inline-start: 2px solid var(--md-quote-rule);
+  color: var(--muted-foreground);
+  padding-inline-start: 1rem;
+}
+
+.markdown-body blockquote > * + * {
+  margin-block-start: var(--md-flow);
+}
+
+.markdown-body blockquote > :first-child {
+  margin-block-start: 0;
+}
+
+.markdown-body blockquote > :last-child {
+  margin-block-end: 0;
+}
+
+.markdown-body blockquote :is(h1, h2, h3, h4) {
+  color: var(--foreground);
+}
+
+/* --- Code blocks --------------------------------------------------------- */
+
+/* Fenced code is shiki's job. shiki emits both palettes as custom properties on
+ * the `pre` and on every token span (`--shiki-light`, `--shiki-dark`, plus the
+ * matching `*-bg`), and with `defaultColor: false` it paints neither. That is
+ * the whole trick: one highlight pass, two palettes, no second theme to keep in
+ * sync and nothing to re-render when the user flips the app over. */
+.markdown-body pre {
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-feature-settings: normal;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+  line-height: 1.65;
+  margin-block: 0;
+  /* Deliberately not a scroller. `CodeBlockCode` already wraps this `pre` in an
+   * `overflow-x-auto` element, and a second one would put a scrollbar inside a
+   * scrollbar. The shiki `pre` carries `tabindex`, so arrow keys scroll it
+   * through its nearest scrollable ancestor. */
+  overflow: visible;
+  tab-size: 2;
+}
+
+/* The re-point has to happen per element, not once on the root: a custom
+ * property substitutes against the element it is declared on, and every token
+ * span carries its *own* pair of palettes. Resolving one value on the `pre`
+ * and letting it inherit would collapse every token onto the default ink — the
+ * exact unreadable state this exists to replace. So each span reads its own
+ * pair, and the line spans fall out of it for free by inheriting the `pre`'s
+ * pair from their parent.
+ *
+ * This is the one `.dark` selector in the file, and it mirrors what
+ * `styles/agents.css` already does: the theme class decides which of the two
+ * declared values wins, and everything below reads a variable. No component and
+ * no `dark:` utility is involved, and flipping the theme needs no re-render and
+ * no re-highlight. */
+.markdown-body pre.shiki,
+.markdown-body pre.shiki span {
+  color: var(--shiki-light);
+}
+
+.dark .markdown-body pre.shiki,
+.dark .markdown-body pre.shiki span {
+  color: var(--shiki-dark);
+}
+
+.markdown-body pre.shiki:focus-visible {
+  outline: 2px solid var(--color-border-focus-ring);
+  outline-offset: -2px;
+}
+
+/* A bare `pre` — a consumer that replaced the `code` component, or a raw
+ * render before hydration — gets the card treatment here. The card component
+ * normally owns the border and the fill; this is the fallback for when there
+ * is no card around it. */
+.markdown-body > pre {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--card-foreground);
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+/* --- Tables -------------------------------------------------------------- */
+
+/* The highest-value element in this app: a fieldwork answer is usually a
+ * comparison, and a comparison wants to be scannable in a column. Header band,
+ * a stronger rule under it, a hairline under every body row, and a 4% zebra
+ * that is just enough to track a row across five columns without the table
+ * turning into a checkerboard.
+ *
+ * `Markdown` wraps the table in `markdown-table-scroll` so the overflow lives
+ * on a real element. `display: block` on the table itself would also contain
+ * the overflow, but it costs the table its own box, its print behaviour and
+ * any future sticky header — with a wrapper the table stays a `display: table`
+ * and `width: 100%` stretches it to the column while its min-content width
+ * scrolls the wrapper when it outgrows it. */
+.markdown-body .markdown-table-scroll > table,
+.markdown-body > table {
+  border-collapse: separate;
+  border-spacing: 0;
+  /* A step below the surrounding prose. A findings table wants to read as its
+   * own artifact — denser than the paragraph it follows — and the extra rows
+   * per screen matter more than matching the message's own type size. */
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  table-layout: auto;
+  width: 100%;
+}
+
+.markdown-body .markdown-table-scroll {
+  border-radius: var(--radius-lg);
+  /* A thin scrollbar is the only affordance a sideways-scrolling table gets on
+   * a phone, so it is worth styling: the platform bar is taller than the rows
+   * it belongs to. */
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.markdown-body :is(thead, tfoot) th {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  /* One step under the cells, so the header reads as a band of labels rather
+   * than as a row of data. */
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: start;
+  white-space: nowrap;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 0.5625rem 0.875rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.markdown-body thead th {
+  /* Under `border-collapse: separate` the header needs its own bottom edge or
+   * the band has nothing to sit on. */
+  border-bottom: 1px solid var(--md-rule-strong);
+}
+
+.markdown-body tbody td,
+.markdown-body tbody th {
+  border-bottom: 1px solid var(--md-rule);
+}
+
+.markdown-body tbody tr:nth-child(even) {
+  background-color: var(--md-zebra);
+}
+
+.markdown-body tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.markdown-body tbody tr:hover {
+  background-color: var(--md-zebra-hover);
+}
+
+.markdown-body td {
+  color: var(--foreground);
+}
+
+/* Digits are the whole point of a findings table, so every cell gets tabular
+ * figures: without them a column of mixed 1s and 8s reads as noise. */
+.markdown-body :is(th, td) {
+  font-variant-numeric: tabular-nums;
+}
+
+.markdown-body td > :is(p, ul, ol) {
+  margin-block: 0;
+}
+
+.markdown-body td > * + * {
+  margin-block-start: var(--md-flow-tight);
+}
+
+/* A bare table, if a consumer replaces the `table` component and drops the
+ * scroll wrapper. */
+.markdown-body > table {
+  display: block;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+/* --- The user bubble ------------------------------------------------------ */
+
+/* Both roles render through this layer now, and they should not read the same.
+ * An assistant turn is an article: a full-width column, a 21px title, 14px
+ * between blocks, a rule above every h2. A user turn is a chip — right-aligned,
+ * `bg-secondary`, 6px radius, capped at 85% of the column — and the same
+ * settings make it look like a pasted document. On a five-line note, two thirds
+ * of the chip becomes whitespace, and a `#` opens a section.
+ *
+ * So what follows is a second set of the *same* tokens, not a second stylesheet.
+ * Redefining `--md-flow` and its siblings on the bubble retunes every rule above
+ * it at once — the block rhythm, the heading margins, the gaps between list
+ * items, the extra air the code card gets — which is what rule 3 asks for. Only
+ * what a token cannot express (heading sizes, the h2 rule, the two panels) is
+ * restated below.
+ *
+ * Scope is a compound selector on purpose. `MessageContent markdown` puts its
+ * `className` on the same element as `markdown-body`, so a single class would be
+ * enough to match; pairing them means nothing here can reach an assistant turn
+ * even if the class lands somewhere else. Nothing in this section animates, so
+ * the `prefers-reduced-motion` block at the foot of the file still covers it. */
+.markdown-body.markdown-bubble {
+  /* Rhythm, roughly halved. These gaps are measured against the chip's own 8px
+   * of padding rather than against a column the reader scrolls through, so the
+   * default 14px reads as a hole in the chip instead of as space between its
+   * lines. */
+  --md-flow: 0.5rem;
+  --md-flow-block: 0.625rem;
+  --md-flow-tight: 0.25rem;
+  --md-section: 0.875rem;
+  --md-heading-gap: 0.25rem;
+  --md-indent: 1rem;
+
+  /* Secondary ink, re-mixed for the new surface. `--muted-foreground` was tuned
+   * against the page background; on `bg-secondary` the same value sits noticeably
+   * closer to the body ink than it does a few pixels away, so everything in the
+   * bubble that means "quieter than the body" — the h4 eyebrow, a quote, a
+   * table header, a struck word — is pulled back toward the primary instead. One
+   * variable for all of them, and it inverts with the theme for free. */
+  --md-ink-quiet: color-mix(
+    in oklab,
+    var(--muted-foreground) 72%,
+    var(--foreground)
+  );
+
+  /* 1.6 rather than the column's 1.7. `remark-breaks` turns every typed newline
+   * into a `<br>`, so a short pasted message is several lines inside one
+   * paragraph rather than several paragraphs — a line box this tall is for prose
+   * you read, not for a note you sent. It still clears the one box that has to
+   * fit inside it: the inline `code` chip comes to 21px at 0.875em with 0.1em of
+   * block padding and a hairline border, inside the 22.4px this gives at 14px. */
+  line-height: 1.6;
+}
+
+/* Headings, compressed to a whisper and stripped of the section rule.
+ *
+ * 1rem / 0.9375rem / 0.875rem is one pixel per step, which at a 400px measure is
+ * a whisper rather than a hierarchy — and a whisper is the right answer here.
+ * Inside a chip a `#` is a label the operator typed, not the title of a
+ * document; three visibly different heading sizes in a short message is the very
+ * thing that would make it read as pasted. What survives is weight, plus the
+ * two-pixel jump at h1, because that is enough to say "this line is a heading"
+ * without announcing a structure. h4 stays the uppercase eyebrow it is
+ * everywhere else — an eyebrow is already the smallest thing in here.
+ *
+ * The h2 rule goes entirely, along with the 2rem above it. That move is right in
+ * a column you scroll through and wrong in a chip that is often three lines long:
+ * it would put more air above one word than around the whole message. */
+.markdown-body.markdown-bubble h1 {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.markdown-body.markdown-bubble h2 {
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+}
+
+.markdown-body.markdown-bubble h3 {
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+}
+
+.markdown-body.markdown-bubble h4 {
+  color: var(--md-ink-quiet);
+  font-size: 0.6875rem;
+}
+
+/* The one margin a token cannot reach: `h3` and `h4` state their own rem pair
+ * further up, so the group's `var(--md-section)` has to be re-stated for them to
+ * pick the bubble's rhythm up. The first/last-child collapse is restated with it
+ * because this rule and the collapse in the group above are the same specificity
+ * — a lone `**Plan**` is a real shape in a user turn, and it must not carry a
+ * margin into the chip's padding. */
+.markdown-body.markdown-bubble :is(h1, h2, h3, h4) {
+  margin-block: var(--md-section) var(--md-heading-gap);
+}
+
+.markdown-body.markdown-bubble :is(h1, h2, h3, h4):first-child,
+.markdown-body.markdown-bubble :is(h1, h2, h3, h4):last-child {
+  margin-block: 0;
+}
+
+/* `:not()` because the base file resets all three properties on a leading h2,
+ * at a specificity this would otherwise tie. The chip is a rare place for a
+ * section rule, and 2rem of air above a heading is a third of the bubble. */
+.markdown-body.markdown-bubble > h2:not(:first-child) {
+  border-top: 0;
+  margin-block-start: var(--md-section);
+  padding-block-start: 0;
+}
+
+/* A quote keeps its left rule — that is the whole point of a quote — and gives
+ * back an eighth of its indent, which inside a chip is a fifth of the width. */
+.markdown-body.markdown-bubble blockquote {
+  color: var(--md-ink-quiet);
+  padding-inline-start: 0.75rem;
+}
+
+/* The task-list hang narrows with `--md-indent`. The checkbox box and its tick
+ * are positioned off the item rather than off the padding, so they do not move. */
+.markdown-body.markdown-bubble li:has(> input[type="checkbox"]) {
+  padding-inline-start: 1.25rem;
+}
+
+.markdown-body.markdown-bubble del,
+.markdown-body.markdown-bubble ol > li::marker {
+  color: var(--md-ink-quiet);
+}
+
+.markdown-body.markdown-bubble hr {
+  margin-block: var(--md-section);
+}
+
+/* The table is the one element that gets materially smaller, because it is the
+ * only one that runs out of room. 13px cells behind 14px of side padding need
+ * roughly 370px to show three columns, and a bubble inside a phone-width column
+ * has under 300px — so a pasted comparison arrived as one clipped word per row.
+ * 12px cells on 10px of padding gives about a third of the width back, and the
+ * rest scrolls, which is the honest answer at this size. */
+.markdown-body.markdown-bubble .markdown-table-scroll > table,
+.markdown-body.markdown-bubble > table {
+  font-size: 0.75rem;
+}
+
+.markdown-body.markdown-bubble :is(th, td) {
+  padding: 0.4375rem 0.625rem;
+}
+
+/* `--muted` and `--secondary` are the same value in this palette, so the header
+ * band the assistant turn gets is the bubble's own background and the header row
+ * simply vanishes. A mix stands in for it. */
+.markdown-body.markdown-bubble :is(thead, tfoot) th {
+  background-color: color-mix(
+    in oklab,
+    var(--muted-foreground) 7%,
+    transparent
+  );
+  color: var(--md-ink-quiet);
+}
+
+/* The panel. On the page a table is bounded by its own hairlines and its header
+ * band; inside the chip those have to close a shape, or the last row just stops.
+ * One hairline on the scroller, so it wraps the scrolling part too, with the
+ * last row's own bottom edge dropped so the two do not stack. */
+.markdown-body.markdown-bubble .markdown-table-scroll,
+.markdown-body.markdown-bubble > table {
+  border: 1px solid var(--md-rule);
+}
+
+.markdown-body.markdown-bubble tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* A code card inside a card. In the assistant column the card is the only
+ * surface between the reader and the page; in the chip it is a second surface,
+ * and a bordered white `rounded-xl` floating in a grey bubble is chrome on
+ * chrome. In the bubble a fence is a slab: the fill the inline `code` chip
+ * already uses — one tone for all code, and it inverts with the theme — with no
+ * border, and padding measured against the chip rather than the column. */
+.markdown-body.markdown-bubble .markdown-code {
+  background-color: var(--md-code-bg);
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--foreground);
+}
+
+/* The `pre` inside `CodeBlockCode`, matched by descendant so the padding holds
+ * whichever wrapper that component puts around it. Both utilities it carries —
+ * `text-[13px]` and `[&>pre]:px-4 [&>pre]:py-4` — live in Tailwind's
+ * `utilities` layer, and this file is imported outside any layer, so these win on
+ * cascade order before specificity is even read. */
+.markdown-body.markdown-bubble .markdown-code pre {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  padding: 0.5rem 0.625rem;
+}
+
+/* Layout containment, not a safety boundary. Raw HTML in a message renders as
+ * live markup, so a user turn can carry an `<img>`, a `<video>` or an `<iframe>`
+ * the markdown layer never saw — and a replaced element will happily push past
+ * the 85% cap that keeps the chip inside its column. Pinned to the content
+ * width, so a wide embed becomes a scroll instead of a layout break. A long
+ * unbroken string is already covered by `overflow-wrap` on the root. */
+.markdown-body.markdown-bubble :is(img, video, iframe, embed, object) {
+  max-width: 100%;
+}
+
+/* --- Reduced motion ------------------------------------------------------ */
+
+/* styles/agents.css already collapses every transition under
+ * `prefers-reduced-motion: reduce`; this block is the local statement of the
+ * same intent for the two transitions this file introduces, so the behaviour
+ * survives a future change to that global rule. */
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body a,
+  .markdown-body tbody tr {
+    transition: none;
+  }
+}
